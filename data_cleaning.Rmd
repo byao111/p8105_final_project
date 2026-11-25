@@ -1,0 +1,161 @@
+---
+title: "Data Cleaning"
+author: "Jinghao Zhang"
+output: html_document
+---
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+```
+
+## Data Import
+
+```{r}
+restaurant_raw = read_csv(
+  "data/restaurant_raw.csv",
+  col_types = cols(
+    CAMIS = col_character(),
+    ZIPCODE = col_character(),
+    PHONE = col_character()
+  )
+) |>
+  clean_names()
+```
+
+```{r}
+dim(restaurant_raw)
+
+glimpse(restaurant_raw)
+
+n_distinct(restaurant_raw$camis)
+```
+
+## Missing Values
+
+```{r}
+missing_summary = restaurant_raw |>
+  summarise(across(everything(), ~ sum(is.na(.)))) |>
+  pivot_longer(
+    everything(),
+    names_to = "variable",
+    values_to = "missing"
+  ) |>
+  mutate(
+    percent = round(missing / nrow(restaurant_raw) * 100, 2)
+  ) |>
+  arrange(desc(missing))
+
+knitr::kable(missing_summary)
+```
+
+## Duplicate Records
+
+```{r}
+sum(duplicated(restaurant_raw))
+
+restaurant_clean = restaurant_raw |>
+  distinct()
+
+dim(restaurant_clean)
+```
+
+## Date Conversion
+
+```{r}
+restaurant_clean = restaurant_clean |>
+  mutate(
+    inspection_date = mdy(inspection_date),
+    grade_date = mdy(grade_date),
+    record_date = mdy(record_date)
+  )
+
+summary(restaurant_clean$inspection_date)
+
+sum(
+  restaurant_clean$inspection_date == as.Date("1900-01-01"),
+  na.rm = TRUE
+)
+```
+
+## Data Quality Check
+
+```{r}
+restaurant_clean |>
+  count(boro, sort = TRUE)
+
+restaurant_clean |>
+  count(grade, sort = TRUE)
+
+restaurant_clean |>
+  count(critical_flag, sort = TRUE)
+
+restaurant_clean |>
+  count(inspection_type, sort = TRUE)
+
+summary(restaurant_clean$score)
+
+sum(
+  restaurant_clean$latitude == 0 |
+  restaurant_clean$longitude == 0,
+  na.rm = TRUE
+)
+```
+## Handling Invalid Values
+
+```{r}
+restaurant_clean = restaurant_clean |>
+  mutate(
+    boro = na_if(boro, "0"),
+    latitude = na_if(latitude, 0),
+    longitude = na_if(longitude, 0),
+    inspected = inspection_date != as.Date("1900-01-01")
+  )
+
+dim(restaurant_clean)
+
+table(restaurant_clean$inspected, useNA = "ifany")
+```
+
+## Valid Inspection Records
+
+```{r}
+inspection_records = restaurant_clean |>
+  filter(
+    inspected == TRUE,
+    !is.na(inspection_type)
+  )
+
+dim(inspection_records)
+
+summary(inspection_records$inspection_date)
+```
+
+## Inspection Consistency Check
+
+```{r}
+inspection_check = inspection_records |>
+  group_by(camis, inspection_date, inspection_type) |>
+  summarise(
+    score_count = n_distinct(score, na.rm = TRUE),
+    grade_count = n_distinct(grade, na.rm = TRUE),
+    boro_count = n_distinct(boro, na.rm = TRUE),
+    cuisine_count = n_distinct(
+      cuisine_description,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+inspection_check |>
+  summarise(
+    total_inspections = n(),
+    score_conflicts = sum(score_count > 1),
+    grade_conflicts = sum(grade_count > 1),
+    boro_conflicts = sum(boro_count > 1),
+    cuisine_conflicts = sum(cuisine_count > 1)
+  ) |>
+  knitr::kable()
+```
+
