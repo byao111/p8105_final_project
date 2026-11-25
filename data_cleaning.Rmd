@@ -14,7 +14,7 @@ library(lubridate)
 
 ```{r}
 restaurant_raw = read_csv(
-  "data/restaurant_raw.csv",
+  "data/restaurant_raw.csv.gz",
   col_types = cols(
     CAMIS = col_character(),
     ZIPCODE = col_character(),
