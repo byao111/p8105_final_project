@@ -27,8 +27,6 @@ restaurant_raw = read_csv(
 ```{r}
 dim(restaurant_raw)
 
-glimpse(restaurant_raw)
-
 n_distinct(restaurant_raw$camis)
 ```
 
@@ -71,8 +69,6 @@ restaurant_clean = restaurant_clean |>
     record_date = mdy(record_date)
   )
 
-summary(restaurant_clean$inspection_date)
-
 sum(
   restaurant_clean$inspection_date == as.Date("1900-01-01"),
   na.rm = TRUE
@@ -87,14 +83,6 @@ restaurant_clean |>
 
 restaurant_clean |>
   count(grade, sort = TRUE)
-
-restaurant_clean |>
-  count(critical_flag, sort = TRUE)
-
-restaurant_clean |>
-  count(inspection_type, sort = TRUE)
-
-summary(restaurant_clean$score)
 
 sum(
   restaurant_clean$latitude == 0 |
@@ -113,8 +101,6 @@ restaurant_clean = restaurant_clean |>
     inspected = inspection_date != as.Date("1900-01-01")
   )
 
-dim(restaurant_clean)
-
 table(restaurant_clean$inspected, useNA = "ifany")
 ```
 
@@ -128,8 +114,6 @@ inspection_records = restaurant_clean |>
   )
 
 dim(inspection_records)
-
-summary(inspection_records$inspection_date)
 ```
 
 ## Inspection Consistency Check
@@ -157,5 +141,118 @@ inspection_check |>
     cuisine_conflicts = sum(cuisine_count > 1)
   ) |>
   knitr::kable()
+```
+
+```{r}
+violation_data = inspection_records |>
+  filter(!is.na(violation_code)) |>
+  select(
+    camis,
+    dba,
+    boro,
+    zipcode,
+    cuisine_description,
+    inspection_date,
+    inspection_type,
+    violation_code,
+    violation_description,
+    critical_flag,
+    score,
+    grade,
+    latitude,
+    longitude
+  )
+```
+
+# Check missing values
+
+```{r}
+colSums(is.na(violation_data))
+```
+
+# Check duplicate rows
+```{r}
+sum(duplicated(violation_data))
+```
+
+## Inspection-Level Dataset
+```{r}
+inspection_data = inspection_records |>
+  group_by(camis, inspection_date, inspection_type) |>
+  summarise(
+    dba = first(dba, na_rm = TRUE),
+    boro = first(boro, na_rm = TRUE),
+    zipcode = first(zipcode, na_rm = TRUE),
+    cuisine_description = first(cuisine_description, na_rm = TRUE),
+    score = first(score, na_rm = TRUE),
+    grade = first(grade, na_rm = TRUE),
+    latitude = first(latitude, na_rm = TRUE),
+    longitude = first(longitude, na_rm = TRUE),
+    violation_count = sum(!is.na(violation_code)),
+    critical_count = sum(
+      critical_flag == "Critical" & !is.na(violation_code),
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+dim(inspection_data)
+```
+
+## Missing Values
+
+```{r}
+colSums(is.na(inspection_data))
+```
+
+
+## Violation Counts
+
+```{r}
+summary(inspection_data$violation_count)
+
+summary(inspection_data$critical_count)
+
+sum(
+  inspection_data$critical_count >
+    inspection_data$violation_count
+)
+```
+
+## Inspection Years
+
+```{r}
+inspection_data |>
+  mutate(year = year(inspection_date)) |>
+  count(year) |>
+  knitr::kable()
+```
+
+## Study Period
+
+```{r}
+inspection_final = inspection_data |>
+  filter(year(inspection_date) %in% 2024:2026)
+
+violation_final = violation_data |>
+  filter(year(inspection_date) %in% 2024:2026)
+
+dim(inspection_final)
+dim(violation_final)
+```
+
+## Final Consistency Check
+
+```{r}
+sum(inspection_final$violation_count) ==
+  nrow(violation_final)
+```
+
+## Export Cleaned Datasets
+
+```{r}
+write_csv(inspection_final, "data/inspection_final.csv")
+
+write_csv(violation_final, "data/violation_final.csv")
 ```
 
